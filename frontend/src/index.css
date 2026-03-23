@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-mc-darker text-gray-100;
+  margin: 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-mc-darker;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-mc-border rounded;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-mc-accent;
+}

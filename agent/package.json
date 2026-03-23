@@ -1,0 +1,19 @@
+{
+  "name": "minecraft-dashboard-agent",
+  "version": "1.0.0",
+  "description": "Minecraft Dashboard Agent API",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dockerode": "^4.0.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "rcon-client": "^4.2.4",
+    "ws": "^8.17.0"
+  }
+}
