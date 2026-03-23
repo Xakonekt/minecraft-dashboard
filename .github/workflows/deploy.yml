@@ -12,40 +12,35 @@ jobs:
   # ─────────────────────────────────────────
   deploy-agent:
     name: Check players & Deploy Agent
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, agent]
 
     steps:
-      - name: SSH → check players, pull & restart
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.AGENT_HOST }}
-          username: ${{ secrets.AGENT_USER }}
-          key: ${{ secrets.AGENT_SSH_KEY }}
-          script: |
-            set -e
+      - name: Check players online
+        run: |
+          HTTP=$(curl -s -o /tmp/players.json -w "%{http_code}" \
+            --max-time 10 http://localhost:3001/api/players || echo "000")
 
-            # Vérifier les joueurs en ligne via l'API locale
-            HTTP=$(curl -s -o /tmp/players.json -w "%{http_code}" \
-              --max-time 10 http://localhost:3001/api/players || echo "000")
+          if [ "$HTTP" != "200" ]; then
+            echo "❌ Agent injoignable (HTTP $HTTP)"
+            exit 1
+          fi
 
-            if [ "$HTTP" != "200" ]; then
-              echo "❌ Agent injoignable (HTTP $HTTP)"
-              exit 1
-            fi
+          ONLINE=$(jq -r '.online // 0' /tmp/players.json)
 
-            ONLINE=$(jq -r '.online // 0' /tmp/players.json)
+          if [ "$ONLINE" -gt "0" ]; then
+            echo "❌ $ONLINE joueur(s) en ligne — déploiement annulé"
+            exit 1
+          fi
 
-            if [ "$ONLINE" -gt "0" ]; then
-              echo "❌ $ONLINE joueur(s) en ligne — déploiement annulé"
-              exit 1
-            fi
+          echo "✅ Serveur vide — déploiement en cours"
 
-            echo "✅ Serveur vide ($ONLINE joueurs) — déploiement en cours"
-            cd ~/minecraft-dashboard/agent
-            git pull origin main
-            npm install --omit=dev
-            pm2 restart minecraft-agent
-            echo "✅ Agent déployé"
+      - name: Pull & restart agent
+        run: |
+          cd ~/minecraft-dashboard/agent
+          git pull origin main
+          npm install --omit=dev
+          pm2 restart minecraft-agent
+          echo "✅ Agent déployé"
 
   # ─────────────────────────────────────────
   # 2. Déployer le frontend (VM Dashboard)
@@ -53,20 +48,14 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend
     needs: deploy-agent
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, frontend]
 
     steps:
-      - name: SSH → pull, build & restart
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.FRONTEND_HOST }}
-          username: ${{ secrets.FRONTEND_USER }}
-          key: ${{ secrets.FRONTEND_SSH_KEY }}
-          script: |
-            set -e
-            cd ~/minecraft-dashboard/frontend
-            git pull origin main
-            npm ci
-            npm run build
-            pm2 restart minecraft-dashboard
-            echo "✅ Frontend déployé"
+      - name: Pull, build & restart
+        run: |
+          cd ~/minecraft-dashboard/frontend
+          git pull origin main
+          npm ci
+          npm run build
+          pm2 restart minecraft-dashboard
+          echo "✅ Frontend déployé"
