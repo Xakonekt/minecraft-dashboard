@@ -7,53 +7,15 @@ on:
 
 jobs:
   # ─────────────────────────────────────────
-  # 1. Vérifier qu'aucun joueur n'est en ligne
-  # ─────────────────────────────────────────
-  check-players:
-    name: Check players online
-    runs-on: ubuntu-latest
-    outputs:
-      can_deploy: ${{ steps.check.outputs.can_deploy }}
-      count: ${{ steps.check.outputs.count }}
-
-    steps:
-      - name: Query agent API
-        id: check
-        run: |
-          HTTP=$(curl -s -o /tmp/players.json -w "%{http_code}" \
-            --max-time 10 \
-            "${{ secrets.AGENT_URL }}/api/players" || echo "000")
-
-          if [ "$HTTP" != "200" ]; then
-            echo "::error::Impossible de joindre l'agent (HTTP $HTTP). Déploiement annulé."
-            exit 1
-          fi
-
-          ONLINE=$(jq -r '.online // 0' /tmp/players.json)
-          echo "count=$ONLINE" >> $GITHUB_OUTPUT
-
-          if [ "$ONLINE" -gt "0" ]; then
-            echo "can_deploy=false" >> $GITHUB_OUTPUT
-          else
-            echo "can_deploy=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Abort — players online
-        if: steps.check.outputs.can_deploy == 'false'
-        run: |
-          echo "::error::${{ steps.check.outputs.count }} joueur(s) en ligne. Déploiement annulé."
-          exit 1
-
-  # ─────────────────────────────────────────
-  # 2a. Déployer l'agent (VM Minecraft)
+  # 1. Vérifier joueurs + déployer l'agent
+  #    (check en local sur la VM via SSH)
   # ─────────────────────────────────────────
   deploy-agent:
-    name: Deploy Agent
-    needs: check-players
+    name: Check players & Deploy Agent
     runs-on: ubuntu-latest
 
     steps:
-      - name: SSH → pull & restart
+      - name: SSH → check players, pull & restart
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.AGENT_HOST }}
@@ -61,6 +23,24 @@ jobs:
           key: ${{ secrets.AGENT_SSH_KEY }}
           script: |
             set -e
+
+            # Vérifier les joueurs en ligne via l'API locale
+            HTTP=$(curl -s -o /tmp/players.json -w "%{http_code}" \
+              --max-time 10 http://localhost:3001/api/players || echo "000")
+
+            if [ "$HTTP" != "200" ]; then
+              echo "❌ Agent injoignable (HTTP $HTTP)"
+              exit 1
+            fi
+
+            ONLINE=$(jq -r '.online // 0' /tmp/players.json)
+
+            if [ "$ONLINE" -gt "0" ]; then
+              echo "❌ $ONLINE joueur(s) en ligne — déploiement annulé"
+              exit 1
+            fi
+
+            echo "✅ Serveur vide ($ONLINE joueurs) — déploiement en cours"
             cd ~/minecraft-dashboard/agent
             git pull origin main
             npm install --omit=dev
@@ -68,11 +48,11 @@ jobs:
             echo "✅ Agent déployé"
 
   # ─────────────────────────────────────────
-  # 2b. Déployer le frontend (VM Dashboard)
+  # 2. Déployer le frontend (VM Dashboard)
   # ─────────────────────────────────────────
   deploy-frontend:
     name: Deploy Frontend
-    needs: check-players
+    needs: deploy-agent
     runs-on: ubuntu-latest
 
     steps:
