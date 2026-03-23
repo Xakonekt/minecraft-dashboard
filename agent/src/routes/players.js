@@ -10,7 +10,8 @@ router.get('/', async (req, res) => {
     const players = getAdapter().parsePlayerList(response);
     res.json(players);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // RCON indisponible = serveur éteint = 0 joueurs
+    res.json({ online: 0, max: 0, players: [], rconError: err.message });
   }
 });
 
