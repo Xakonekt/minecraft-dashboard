@@ -36,6 +36,18 @@ export function markIntentionalStop() {
   setTimeout(() => { intentionalStop = false; }, 60_000);
 }
 
+// Called after restartContainer() resolves — Docker restart is too fast for the 30s poll
+export async function handleRestartComplete(name) {
+  await sendWebhook('offline', { name }); // notify offline (we know it happened)
+  lastRunning = false;                    // reset state so next poll detects online
+  setTimeout(pollStatus, 1000);          // immediate poll to send online notification
+}
+
+// Called after startContainer() to notify online faster than 30s poll
+export function scheduleImmediatePoll() {
+  setTimeout(pollStatus, 2000);
+}
+
 async function pollStatus() {
   try {
     const { running, name } = await getContainerStatus();

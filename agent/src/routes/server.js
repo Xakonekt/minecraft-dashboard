@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getContainerStatus, startContainer, stopContainer, restartContainer } from '../services/docker.js';
 import { sendCommand, isRconAvailable } from '../services/rcon.js';
 import { getAdapter } from '../adapters/index.js';
-import { markIntentionalStop } from '../services/monitor.js';
+import { markIntentionalStop, handleRestartComplete, scheduleImmediatePoll } from '../services/monitor.js';
 
 const router = Router();
 
@@ -49,6 +49,7 @@ router.get('/status', async (req, res) => {
 router.post('/start', async (req, res) => {
   try {
     await startContainer();
+    scheduleImmediatePoll(); // notify online without waiting 30s
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -69,6 +70,8 @@ router.post('/restart', async (req, res) => {
   try {
     markIntentionalStop();
     await restartContainer();
+    const status = await getContainerStatus();
+    handleRestartComplete(status.name).catch(() => {}); // offline + online webhooks
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
