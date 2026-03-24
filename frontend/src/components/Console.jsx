@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { api } from '../api/client.js';
 
@@ -35,7 +36,8 @@ function messageClass(message) {
 const FILTERS = ['ALL', 'INFO', 'WARN', 'ERROR'];
 
 export function Console() {
-  const { logs, connected, clearLogs } = useWebSocket(500);
+  const { serverId } = useParams();
+  const { logs, connected, clearLogs } = useWebSocket(serverId, 500);
   const [command, setCommand]     = useState('');
   const [cmdHistory, setCmdHistory] = useState([]);
   const [histIdx, setHistIdx]     = useState(-1);
@@ -86,7 +88,7 @@ export function Console() {
     setHistIdx(-1);
     setCommand('');
     setSending(true);
-    try { await api.sendCommand(cmd); }
+    try { await api.sendCommand(serverId, cmd); }
     catch (err) { console.error('Command failed:', err.message); }
     finally { setSending(false); }
   };

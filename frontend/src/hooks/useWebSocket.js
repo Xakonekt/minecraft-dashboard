@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createWebSocket } from '../api/client.js';
 
-export function useWebSocket(maxLines = 500) {
+export function useWebSocket(serverId, maxLines = 500) {
   const [logs, setLogs] = useState([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
 
   const connect = useCallback(() => {
+    if (!serverId) return;
+
     const ws = createWebSocket(
+      serverId,
       (msg) => {
         if (msg.type === 'history') {
-          // Historique complet reçu à la connexion
           setLogs(msg.data.slice(-maxLines));
         } else if (msg.type === 'log') {
           setLogs((prev) => {
@@ -23,16 +25,17 @@ export function useWebSocket(maxLines = 500) {
       () => setConnected(true),
       () => {
         setConnected(false);
-        // Auto-reconnect after 3s
         reconnectTimer.current = setTimeout(connect, 3000);
       }
     );
 
     ws.onerror = () => ws.close();
     wsRef.current = ws;
-  }, [maxLines]);
+  }, [serverId, maxLines]);
 
   useEffect(() => {
+    setLogs([]);
+    setConnected(false);
     connect();
     return () => {
       clearTimeout(reconnectTimer.current);

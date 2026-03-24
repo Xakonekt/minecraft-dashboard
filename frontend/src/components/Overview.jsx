@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 
 function StatCard({ label, value, sub, highlight }) {
@@ -41,6 +42,7 @@ function formatUptime(startedAt) {
 }
 
 export function Overview({ status, onRefresh }) {
+  const { serverId } = useParams();
   const [busy, setBusy] = useState(null);
 
   const handle = async (action, fn) => {
@@ -146,19 +148,19 @@ export function Overview({ status, onRefresh }) {
             label={busy === 'start' ? 'Starting...' : 'Start'}
             variant="green"
             disabled={running || busy !== null}
-            onClick={() => handle('start', api.start)}
+            onClick={() => handle('start', () => api.start(serverId))}
           />
           <ControlBtn
             label={busy === 'stop' ? 'Stopping...' : 'Stop'}
             variant="red"
             disabled={!running || busy !== null}
-            onClick={() => handle('stop', api.stop)}
+            onClick={() => handle('stop', () => api.stop(serverId))}
           />
           <ControlBtn
             label={busy === 'restart' ? 'Restarting...' : 'Restart'}
             variant="yellow"
             disabled={!running || busy !== null}
-            onClick={() => handle('restart', api.restart)}
+            onClick={() => handle('restart', () => api.restart(serverId))}
           />
         </div>
       </div>

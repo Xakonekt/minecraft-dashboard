@@ -15,49 +15,50 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  // Server status & control
-  getStatus: () => request('/api/server/status'),
-  start: () => request('/api/server/start', { method: 'POST' }),
-  stop: () => request('/api/server/stop', { method: 'POST' }),
-  restart: () => request('/api/server/restart', { method: 'POST' }),
+  // Liste de tous les serveurs (avec état running)
+  getServers: () => request('/api/servers'),
+
+  // Status + contrôle par serveur
+  getStatus:  (id) => request(`/api/servers/${id}/status`),
+  start:      (id) => request(`/api/servers/${id}/start`,   { method: 'POST' }),
+  stop:       (id) => request(`/api/servers/${id}/stop`,    { method: 'POST' }),
+  restart:    (id) => request(`/api/servers/${id}/restart`, { method: 'POST' }),
 
   // Console
-  sendCommand: (command) =>
-    request('/api/console/command', {
+  sendCommand: (id, command) =>
+    request(`/api/servers/${id}/console/command`, {
       method: 'POST',
       body: JSON.stringify({ command }),
     }),
-  getLogs: (tail = 200) => request(`/api/console/logs?tail=${tail}`),
+  getLogs: (id, tail = 200) => request(`/api/servers/${id}/console/logs?tail=${tail}`),
 
-  // Players
-  getPlayers: () => request('/api/players'),
-  kickPlayer: (name, reason) =>
-    request(`/api/players/${encodeURIComponent(name)}/kick`, {
+  // Joueurs
+  getPlayers: (id) => request(`/api/servers/${id}/players`),
+  kickPlayer: (id, name, reason) =>
+    request(`/api/servers/${id}/players/${encodeURIComponent(name)}/kick`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
-  banPlayer: (name, reason) =>
-    request(`/api/players/${encodeURIComponent(name)}/ban`, {
+  banPlayer: (id, name, reason) =>
+    request(`/api/servers/${id}/players/${encodeURIComponent(name)}/ban`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
-  opPlayer: (name) =>
-    request(`/api/players/${encodeURIComponent(name)}/op`, { method: 'POST' }),
-  deopPlayer: (name) =>
-    request(`/api/players/${encodeURIComponent(name)}/deop`, { method: 'POST' }),
+  opPlayer:   (id, name) =>
+    request(`/api/servers/${id}/players/${encodeURIComponent(name)}/op`,   { method: 'POST' }),
+  deopPlayer: (id, name) =>
+    request(`/api/servers/${id}/players/${encodeURIComponent(name)}/deop`, { method: 'POST' }),
 };
 
-export function createWebSocket(onMessage, onOpen, onClose) {
-  const wsUrl = `${BASE_URL.replace(/^http/, 'ws')}/ws/logs`;
+export function createWebSocket(serverId, onMessage, onOpen, onClose) {
+  const wsUrl = `${BASE_URL.replace(/^http/, 'ws')}/ws/logs/${serverId}`;
   const ws = new WebSocket(wsUrl);
 
   ws.onmessage = (e) => {
-    try {
-      onMessage(JSON.parse(e.data));
-    } catch {}
+    try { onMessage(JSON.parse(e.data)); } catch {}
   };
 
-  if (onOpen) ws.onopen = onOpen;
+  if (onOpen)  ws.onopen  = onOpen;
   if (onClose) ws.onclose = onClose;
 
   return ws;

@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client.js';
 
-export function useServer(intervalMs = 5000) {
+export function useServer(serverId, intervalMs = 5000) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
+    if (!serverId) return;
     try {
-      const data = await api.getStatus();
+      const data = await api.getStatus(serverId);
       setStatus(data);
       setError(null);
     } catch (err) {
@@ -16,9 +17,11 @@ export function useServer(intervalMs = 5000) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [serverId]);
 
   useEffect(() => {
+    setStatus(null);
+    setLoading(true);
     refresh();
     const id = setInterval(refresh, intervalMs);
     return () => clearInterval(id);

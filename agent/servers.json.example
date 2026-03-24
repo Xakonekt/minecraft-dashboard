@@ -1,0 +1,20 @@
+[
+  {
+    "id": "survival",
+    "name": "Survival",
+    "containerName": "minecraft-survival",
+    "rconHost": "localhost",
+    "rconPort": 25575,
+    "rconPassword": "YourRconPassword",
+    "serverType": "neoforge"
+  },
+  {
+    "id": "creative",
+    "name": "Creative",
+    "containerName": "minecraft-creative",
+    "rconHost": "localhost",
+    "rconPort": 25576,
+    "rconPassword": "YourRconPassword",
+    "serverType": "paper"
+  }
+]

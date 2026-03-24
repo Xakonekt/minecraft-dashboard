@@ -1,96 +1,86 @@
-import { getContainerStatus, streamContainerLogs } from './docker.js';
 import { sendWebhook } from './discord.js';
-import { addLog, clearLogs } from './logBuffer.js';
 import { config } from '../config.js';
-
-// true = running, false = stopped, null = unknown (first check)
-let lastRunning = null;
-let intentionalStop = false; // set to true when WE trigger a stop/restart
 
 const PATTERNS = {
   join:  /^.+?:\s+(.+?) joined the game$/,
   leave: /^.+?:\s+(.+?) left the game$/,
 };
 
-export async function startMonitor() {
-  if (!config.discord.webhookUrl) {
-    console.log('[Monitor] No Discord webhook URL configured — skipping.');
-    return;
-  }
+export function createMonitor(serverConfig, logBuffer, dockerService) {
+  let lastRunning = null;
+  let intentionalStop = false;
 
-  console.log('[Monitor] Started. Events: server status + players');
+  async function pollStatus() {
+    try {
+      const { running, name } = await dockerService.getContainerStatus();
 
-  // Initial status (silent — don't send webhook on startup)
-  try {
-    const s = await getContainerStatus();
-    lastRunning = s.running;
-  } catch {}
-
-  setInterval(pollStatus, 30_000);
-  startLogStream();
-}
-
-// Called from routes before stopping/restarting so we don't flag it as a crash
-export function markIntentionalStop() {
-  intentionalStop = true;
-  setTimeout(() => { intentionalStop = false; }, 60_000);
-}
-
-// Called after restartContainer() resolves — Docker restart is too fast for the 30s poll
-export async function handleRestartComplete(name) {
-  await sendWebhook('offline', { name }); // notify offline (we know it happened)
-  lastRunning = false;                    // reset state so next poll detects online
-  setTimeout(pollStatus, 1000);          // immediate poll to send online notification
-}
-
-// Called after startContainer() to notify online faster than 30s poll
-export function scheduleImmediatePoll() {
-  setTimeout(pollStatus, 2000);
-}
-
-async function pollStatus() {
-  try {
-    const { running, name } = await getContainerStatus();
-
-    if (lastRunning !== null && lastRunning !== running) {
-      if (running) {
-        await sendWebhook('online', { name });
-      } else {
-        clearLogs(); // vider le buffer quand le serveur s'arrête
-        await sendWebhook(intentionalStop ? 'offline' : 'crash', { name });
+      if (lastRunning !== null && lastRunning !== running) {
+        if (running) {
+          await sendWebhook('online', { name });
+        } else {
+          logBuffer.clearLogs();
+          await sendWebhook(intentionalStop ? 'offline' : 'crash', { name });
+        }
+        intentionalStop = false;
       }
-      intentionalStop = false;
+
+      lastRunning = running;
+    } catch (err) {
+      console.error(`[Monitor:${serverConfig.id}] Poll error:`, err.message);
     }
-
-    lastRunning = running;
-  } catch (err) {
-    console.error('[Monitor] Poll error:', err.message);
-  }
-}
-
-async function startLogStream() {
-  try {
-    const stream = await streamContainerLogs(handleLog);
-    stream.on('error', () => setTimeout(startLogStream, 10_000));
-    stream.on('end',   () => setTimeout(startLogStream, 10_000));
-  } catch {
-    setTimeout(startLogStream, 10_000);
-  }
-}
-
-function handleLog(line) {
-  addLog(line); // toujours ajouter au buffer
-
-  if (!config.discord.notifyPlayers) return;
-
-  const join = line.match(PATTERNS.join);
-  if (join) {
-    sendWebhook('join', { player: join[1] }).catch(() => {});
-    return;
   }
 
-  const leave = line.match(PATTERNS.leave);
-  if (leave) {
-    sendWebhook('leave', { player: leave[1] }).catch(() => {});
+  async function startLogStream() {
+    try {
+      const stream = await dockerService.streamContainerLogs(handleLog);
+      stream.on('error', () => setTimeout(startLogStream, 10_000));
+      stream.on('end',   () => setTimeout(startLogStream, 10_000));
+    } catch {
+      setTimeout(startLogStream, 10_000);
+    }
   }
+
+  function handleLog(line) {
+    logBuffer.addLog(line);
+
+    if (!config.discord.notifyPlayers) return;
+
+    const join = line.match(PATTERNS.join);
+    if (join) { sendWebhook('join', { player: join[1] }).catch(() => {}); return; }
+
+    const leave = line.match(PATTERNS.leave);
+    if (leave) { sendWebhook('leave', { player: leave[1] }).catch(() => {}); }
+  }
+
+  return {
+    async start() {
+      if (!config.discord.webhookUrl) {
+        console.log(`[Monitor:${serverConfig.id}] No webhook URL — Discord disabled.`);
+      } else {
+        console.log(`[Monitor:${serverConfig.id}] Started.`);
+      }
+      try {
+        const s = await dockerService.getContainerStatus();
+        lastRunning = s.running;
+      } catch {}
+
+      setInterval(pollStatus, 30_000);
+      startLogStream();
+    },
+
+    markIntentionalStop() {
+      intentionalStop = true;
+      setTimeout(() => { intentionalStop = false; }, 60_000);
+    },
+
+    async handleRestartComplete(name) {
+      await sendWebhook('offline', { name });
+      lastRunning = false;
+      setTimeout(pollStatus, 1000);
+    },
+
+    scheduleImmediatePoll() {
+      setTimeout(pollStatus, 2000);
+    },
+  };
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 
 const ACTIONS = ['kick', 'ban', 'op', 'deop'];
@@ -67,6 +68,7 @@ function ActionModal({ player, onConfirm, onCancel }) {
 }
 
 export function Players() {
+  const { serverId } = useParams();
   const [players, setPlayers] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -74,7 +76,7 @@ export function Players() {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api.getPlayers();
+      const data = await api.getPlayers(serverId);
       setPlayers(data);
       setError(null);
     } catch (err) {
@@ -82,7 +84,7 @@ export function Players() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [serverId]);
 
   useEffect(() => {
     refresh();
@@ -92,10 +94,10 @@ export function Players() {
 
   const handleConfirm = async (type, reason) => {
     try {
-      if (type === 'kick') await api.kickPlayer(selected, reason);
-      else if (type === 'ban') await api.banPlayer(selected, reason);
-      else if (type === 'op') await api.opPlayer(selected);
-      else if (type === 'deop') await api.deopPlayer(selected);
+      if (type === 'kick') await api.kickPlayer(serverId, selected, reason);
+      else if (type === 'ban') await api.banPlayer(serverId, selected, reason);
+      else if (type === 'op') await api.opPlayer(serverId, selected);
+      else if (type === 'deop') await api.deopPlayer(serverId, selected);
       setSelected(null);
       await refresh();
     } catch (err) {

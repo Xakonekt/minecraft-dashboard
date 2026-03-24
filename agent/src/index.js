@@ -3,10 +3,8 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { config } from './config.js';
 import { setupWebSocket } from './ws/index.js';
-import { startMonitor } from './services/monitor.js';
-import serverRoutes from './routes/server.js';
-import consoleRoutes from './routes/console.js';
-import playerRoutes from './routes/players.js';
+import { loadServers, startAllMonitors, getAllServers } from './services/serverRegistry.js';
+import serversRoutes from './routes/servers.js';
 
 const app = express();
 const server = createServer(app);
@@ -14,21 +12,36 @@ const server = createServer(app);
 app.use(cors());
 app.use(express.json());
 
+// Charger les serveurs depuis servers.json
+loadServers();
+
 // Routes
-app.use('/api/server', serverRoutes);
-app.use('/api/console', consoleRoutes);
-app.use('/api/players', playerRoutes);
+app.use('/api/servers', serversRoutes);
 
-app.get('/health', (_, res) => res.json({ ok: true, serverType: config.serverType }));
+// Rétrocompatibilité CI/CD : total joueurs sur tous les serveurs
+app.get('/api/players', async (req, res) => {
+  let totalOnline = 0;
+  for (const { rcon, adapter } of getAllServers()) {
+    try {
+      const response = await rcon.sendCommand('list');
+      const players = adapter.parsePlayerList(response);
+      totalOnline += players.online;
+    } catch {}
+  }
+  res.json({ online: totalOnline });
+});
 
-// WebSocket — real-time logs
+app.get('/health', (_, res) => {
+  const servers = getAllServers().map(({ config: c }) => ({ id: c.id, name: c.name }));
+  res.json({ ok: true, servers });
+});
+
+// WebSocket — logs en temps réel par serveur
 setupWebSocket(server);
 
-startMonitor();
+// Démarrer les monitors
+startAllMonitors();
 
 server.listen(config.port, () => {
   console.log(`[Agent] Running on port ${config.port}`);
-  console.log(`[Agent] Server type : ${config.serverType}`);
-  console.log(`[Agent] Container   : ${config.docker.containerName}`);
-  console.log(`[Agent] RCON        : ${config.rcon.host}:${config.rcon.port}`);
 });

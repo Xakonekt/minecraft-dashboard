@@ -35,7 +35,7 @@ export async function sendWebhook(event, data = {}) {
 }
 
 function buildEmbed(event, data) {
-  const serverName = data.name || config.docker.containerName;
+  const serverName = data.name || 'Minecraft';
   const timestamp = new Date().toISOString();
 
   const base = {

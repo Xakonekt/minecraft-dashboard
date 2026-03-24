@@ -10,6 +10,9 @@ build/
 .env.local
 .env.production
 
+# Server config (contient les mots de passe RCON)
+agent/servers.json
+
 # Logs
 *.log
 npm-debug.log*
