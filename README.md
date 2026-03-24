@@ -1,36 +1,40 @@
 # Minecraft Dashboard
 
-A self-hosted web dashboard to manage your Minecraft server running in Docker. Control your server, view real-time logs, manage players, and receive Discord notifications — all from a clean browser interface.
+A self-hosted web dashboard to manage one or more Minecraft servers running in Docker. Control your servers, view real-time logs, manage players, and receive Discord notifications — all from a clean browser interface.
 
 ## Features
 
-- **Server control** — Start, stop, restart your Docker container
+- **Multi-server support** — Manage multiple Minecraft servers from a single dashboard
+- **Server control** — Start, stop, restart Docker containers
 - **Real-time console** — Live log streaming via WebSocket, persistent across page refreshes
 - **Log filtering** — Filter by level (INFO / WARN / ERROR), search by keyword
 - **Player management** — List online players, kick, ban, op/deop
 - **TPS monitoring** — Server performance for Forge, NeoForge, Paper, Spigot, Purpur
+- **Auto-restart** — Daily scheduled restart with in-game warnings and player protection
 - **Discord notifications** — Server online/offline/crash, player join/leave
-- **CI/CD** — Auto-deploy via GitHub Actions when the server is empty (self-hosted runners)
+- **CI/CD** — Auto-deploy via GitHub Actions when all servers are empty (self-hosted runners)
 - **Multi server-type support** — Vanilla, Forge, NeoForge, Paper, Spigot, Purpur, Fabric
 
 ## Architecture
 
 ```
-┌─────────────────────┐         ┌──────────────────────────┐
-│   Frontend VM        │         │   Minecraft VM            │
-│                     │         │                          │
-│  React + Vite       │─HTTP/WS─▶  Agent (Node.js API)     │
-│  TailwindCSS        │         │  Express + WebSocket     │
-│  Port 5173          │         │  Port 3001               │
-│                     │         │       │                  │
-└─────────────────────┘         │  Docker socket           │
-                                │       │                  │
-                                │  ┌────▼────────────┐     │
-                                │  │ Minecraft Server │     │
-                                │  │  (Docker)        │     │
-                                │  └─────────────────┘     │
-                                └──────────────────────────┘
+┌─────────────────────┐         ┌──────────────────────────────────┐
+│   Frontend VM        │         │   Minecraft VM                    │
+│                     │         │                                  │
+│  React + Vite       │─HTTP/WS─▶  Agent (Node.js API)             │
+│  TailwindCSS        │         │  Express + WebSocket             │
+│  Port 5173          │         │  Port 3001                       │
+│                     │         │       │                          │
+└─────────────────────┘         │  Docker socket                   │
+                                │       │                          │
+                                │  ┌────▼──────┐  ┌────────────┐  │
+                                │  │ Server #1  │  │ Server #2  │  │
+                                │  │ (Docker)   │  │ (Docker)   │  │
+                                │  └───────────┘  └────────────┘  │
+                                └──────────────────────────────────┘
 ```
+
+> All Minecraft containers must be on the same VM as the agent (Docker socket access required).
 
 ## Prerequisites
 
@@ -39,7 +43,7 @@ A self-hosted web dashboard to manage your Minecraft server running in Docker. C
 - Docker + Docker Compose
 - Node.js 18+ and npm
 - PM2 (`npm install -g pm2`)
-- Minecraft server container with RCON enabled
+- Minecraft server container(s) with RCON enabled
 
 ### Frontend VM
 - Linux
@@ -91,32 +95,53 @@ cd ~/minecraft-dashboard/agent
 npm install
 ```
 
-Create the environment file:
+**Create the environment file:**
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in your values:
-
 ```env
 PORT=3001
 DOCKER_SOCKET=/var/run/docker.sock
-CONTAINER_NAME=minecraft          # Name of your Docker container
 
-RCON_HOST=localhost
-RCON_PORT=25575
-RCON_PASSWORD=YourRconPassword
-RCON_TIMEOUT=5000
-
-SERVER_TYPE=neoforge              # vanilla | forge | neoforge | paper | spigot | fabric | purpur
-
-DISCORD_WEBHOOK_URL=              # Optional — leave empty to disable
+# Discord Webhook (optional — leave empty to disable)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/XXXXXXXXXX/XXXXXXXXXX
 DISCORD_NOTIFY_PLAYERS=true
 ```
 
-> **SERVER_TYPE** affects TPS parsing. Use `paper` for Paper/Spigot/Purpur, `forge` or `neoforge` for modded, `vanilla` for everything else.
+**Create the servers config file:**
+
+```bash
+cp servers.json.example servers.json
+nano servers.json
+```
+
+```json
+[
+  {
+    "id": "survival",
+    "name": "Survival",
+    "containerName": "minecraft",
+    "rconHost": "localhost",
+    "rconPort": 25575,
+    "rconPassword": "YourRconPassword",
+    "serverType": "neoforge",
+    "autoRestart": {
+      "enabled": true,
+      "time": "04:00",
+      "skipIfPlayersOnline": true
+    }
+  }
+]
+```
+
+> **`id`** must be unique and URL-safe (no spaces). It appears in the browser URL.
+> **`serverType`** affects TPS parsing: `paper` for Paper/Spigot/Purpur, `forge`/`neoforge` for modded, `vanilla` for everything else.
+> **`servers.json` is never committed to git** — it contains your RCON passwords.
+
+To add a second server, add another object to the array with a different `id`, `containerName`, and `rconPort`.
 
 Make sure your user has access to the Docker socket:
 
@@ -137,7 +162,7 @@ Verify it works:
 
 ```bash
 curl http://localhost:3001/health
-# Expected: {"ok":true,"serverType":"neoforge"}
+# Expected: {"ok":true,"servers":[{"id":"survival","name":"Survival"}]}
 ```
 
 ---
@@ -175,9 +200,37 @@ The dashboard is now accessible at `http://<frontend-vm-ip>:5173`.
 
 ---
 
-## Discord Webhooks (Optional)
+## Auto-Restart
 
-To receive Discord notifications:
+Each server can be configured to restart automatically at a fixed time every day.
+
+```json
+"autoRestart": {
+  "enabled": true,
+  "time": "04:00",
+  "skipIfPlayersOnline": true
+}
+```
+
+| Option | Description |
+|--------|-------------|
+| `enabled` | Enable or disable the scheduler |
+| `time` | Restart time in `HH:MM` format (uses the agent VM's local timezone) |
+| `skipIfPlayersOnline` | Cancel the restart if players are connected — retries the next day |
+
+**Timeline on restart day:**
+- `T-5min` — `§e[Auto] Le serveur redémarre dans 5 minutes.`
+- `T-1min` — `§c[Auto] Le serveur redémarre dans 1 minute !`
+- `T-0` — Restart + Discord notifications (offline → online)
+
+The scheduler logs the next scheduled restart on startup:
+```
+[Scheduler:survival] Prochain redémarrage : 25/03/2026 04:00:00
+```
+
+---
+
+## Discord Webhooks (Optional)
 
 1. In Discord, go to your server → **Channel Settings** → **Integrations** → **Webhooks**
 2. Create a new webhook, copy the URL
@@ -198,51 +251,43 @@ To receive Discord notifications:
 
 ## CI/CD with GitHub Actions
 
-Automatically deploy on every push to `main`, but **only when no players are online**.
+Automatically deploys on every push to `main`, but **only when no players are online on any server**.
 
 ### How it works
 
 1. Push to `main`
-2. GitHub Actions checks if any players are online via the agent API
-3. If the server is empty → pulls latest code → restarts services
-4. Frontend rebuild is triggered after the agent deploys successfully
+2. Agent VM: checks total online players across all servers
+3. If all servers are empty → pulls code → restarts agent
+4. Frontend VM: pulls code → rebuilds → restarts frontend
 
 ### Setup
 
 #### Step 1 — Install self-hosted runners
 
-GitHub-hosted runners cannot reach VMs on a private network. You need to install runners directly on your VMs.
+GitHub-hosted runners cannot reach VMs on a private network. Install runners directly on your VMs.
 
 **On the Minecraft VM:**
 
 Go to your GitHub repo → **Settings** → **Actions** → **Runners** → **New self-hosted runner**
 
-Select Linux, then follow the instructions. When prompted for labels, use:
-
+Select Linux, follow the instructions. When prompted for labels, enter:
 ```
 agent
 ```
 
 Install as a systemd service so it survives reboots:
-
 ```bash
 sudo ./svc.sh install
 sudo ./svc.sh start
 ```
 
-**On the Frontend VM:**
-
-Repeat the same process. When prompted for labels, use:
-
-```
-frontend
-```
+**On the Frontend VM:** repeat with label `frontend`.
 
 Verify both runners appear as **Online** in GitHub → Settings → Actions → Runners.
 
 #### Step 2 — No secrets needed
 
-Since the runners run directly on your VMs, the workflow uses `localhost` to communicate with the agent. No SSH keys or IP addresses need to be stored in GitHub Secrets.
+Runners run directly on your VMs and communicate via `localhost`. No SSH keys or IP addresses need to be stored in GitHub Secrets.
 
 #### Step 3 — Push to deploy
 
@@ -250,38 +295,42 @@ Since the runners run directly on your VMs, the workflow uses `localhost` to com
 git push origin main
 ```
 
-The workflow will:
-1. Check player count via `http://localhost:3001/api/players`
-2. Skip deployment if players are online
-3. Pull + install + restart agent
-4. Pull + build + restart frontend
-
 ---
 
 ## Project Structure
 
 ```
 minecraft-dashboard/
-├── agent/                    # Backend API (runs on Minecraft VM)
+├── agent/                      # Backend API (runs on Minecraft VM)
 │   ├── src/
-│   │   ├── index.js          # Express server entry point
-│   │   ├── config.js         # Environment config
-│   │   ├── adapters/         # Server-type adapters (vanilla, forge, paper…)
-│   │   ├── routes/           # API routes (server, players, console)
-│   │   ├── services/         # Docker, RCON, Discord, monitor, log buffer
-│   │   └── ws/               # WebSocket handler
-│   └── .env.example
+│   │   ├── index.js            # Express server entry point
+│   │   ├── config.js           # Global environment config
+│   │   ├── adapters/           # Server-type adapters (vanilla, forge, paper…)
+│   │   ├── routes/
+│   │   │   └── servers.js      # All API routes (/api/servers/*)
+│   │   ├── services/
+│   │   │   ├── serverRegistry.js  # Loads servers.json, holds per-server state
+│   │   │   ├── docker.js          # Docker container management (factory)
+│   │   │   ├── rcon.js            # RCON client (factory)
+│   │   │   ├── monitor.js         # Status polling + Discord events (factory)
+│   │   │   ├── scheduler.js       # Daily auto-restart scheduler
+│   │   │   ├── discord.js         # Discord webhook sender
+│   │   │   └── logBuffer.js       # In-memory log buffer (factory)
+│   │   └── ws/
+│   │       └── index.js           # WebSocket handler (/ws/logs/:id)
+│   ├── .env.example
+│   └── servers.json.example    # Server config template (copy → servers.json)
 │
-├── frontend/                 # React dashboard (runs on Frontend VM)
+├── frontend/                   # React dashboard (runs on Frontend VM)
 │   ├── src/
-│   │   ├── components/       # Overview, Console, Players, Sidebar
-│   │   ├── hooks/            # useServer, useWebSocket
-│   │   └── api/              # HTTP client
+│   │   ├── components/         # Overview, Console, Players, Sidebar
+│   │   ├── hooks/              # useServer, useWebSocket
+│   │   └── api/                # HTTP + WebSocket client
 │   └── .env.example
 │
 └── .github/
     └── workflows/
-        └── deploy.yml        # CI/CD pipeline
+        └── deploy.yml          # CI/CD pipeline
 ```
 
 ---
@@ -293,36 +342,55 @@ All endpoints are served from the agent on port `3001`.
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Agent health check |
-| `GET` | `/api/server/status` | Container status, RCON, players, TPS |
-| `POST` | `/api/server/start` | Start the container |
-| `POST` | `/api/server/stop` | Stop the container |
-| `POST` | `/api/server/restart` | Restart the container |
-| `GET` | `/api/players` | List online players |
-| `POST` | `/api/players/:name/kick` | Kick a player |
-| `POST` | `/api/players/:name/ban` | Ban a player |
-| `POST` | `/api/players/:name/op` | Grant OP |
-| `POST` | `/api/players/:name/deop` | Revoke OP |
-| `POST` | `/api/console/command` | Send RCON command |
-| `GET` | `/api/console/logs?tail=200` | Get last N log lines |
-| `WS` | `/ws/logs` | Real-time log stream |
+| `GET` | `/api/servers` | List all servers with live running state |
+| `GET` | `/api/servers/:id/status` | Full status (container, RCON, players, TPS) |
+| `POST` | `/api/servers/:id/start` | Start the container |
+| `POST` | `/api/servers/:id/stop` | Stop the container |
+| `POST` | `/api/servers/:id/restart` | Restart the container |
+| `GET` | `/api/servers/:id/players` | List online players |
+| `POST` | `/api/servers/:id/players/:name/kick` | Kick a player |
+| `POST` | `/api/servers/:id/players/:name/ban` | Ban a player |
+| `POST` | `/api/servers/:id/players/:name/op` | Grant OP |
+| `POST` | `/api/servers/:id/players/:name/deop` | Revoke OP |
+| `POST` | `/api/servers/:id/console/command` | Send RCON command |
+| `GET` | `/api/servers/:id/console/logs?tail=200` | Get last N log lines |
+| `WS` | `/ws/logs/:id` | Real-time log stream |
+| `GET` | `/api/players` | Total online players across all servers (CI/CD compat) |
 
 ---
 
 ## Troubleshooting
 
-**Agent won't start / `Cannot find package 'express'`**
+**Agent won't start — `servers.json introuvable`**
+```bash
+cd ~/minecraft-dashboard/agent
+cp servers.json.example servers.json
+nano servers.json  # fill in your server details
+pm2 restart minecraft-agent
+```
+
+**Agent won't start — `Cannot find package 'express'`**
 ```bash
 cd ~/minecraft-dashboard/agent && npm install
 ```
 
-**CORS error in browser**
-Check that `VITE_AGENT_URL` in the frontend `.env` points to the correct agent IP (not `localhost`), then rebuild: `npm run build && pm2 restart minecraft-dashboard`.
+**"Aucun serveur configuré" on the frontend**
+The agent is likely crashed. Check logs: `pm2 logs minecraft-agent --lines 30`
 
-**No Discord notifications on server restart**
-This is a known timing issue when Docker restart completes in under 30 seconds. Upgrade to the latest version — it was fixed by triggering an immediate poll after restart.
+**CORS error in browser**
+Check that `VITE_AGENT_URL` in the frontend `.env` points to the correct agent IP (not `localhost`), then rebuild:
+```bash
+npm run build && pm2 restart minecraft-dashboard
+```
+
+**Log filters not working (all logs show as RAW)**
+Make sure you are on the latest version — the log regex was updated to support the NeoForge `[Thread/LEVEL] [mod/]:` format.
 
 **Logs not showing in console**
-The agent streams Docker logs directly. Make sure the container is running and the agent has access to the Docker socket (`sudo usermod -aG docker $USER`).
+Make sure the container is running and the agent has Docker socket access:
+```bash
+sudo usermod -aG docker $USER  # then log out and back in
+```
 
 **PM2 pointing to old path after moving the repo**
 ```bash
@@ -334,7 +402,6 @@ pm2 save
 
 **GitHub Actions runner offline**
 ```bash
-# On the relevant VM:
 sudo systemctl status actions.runner.*
 sudo systemctl start actions.runner.*
 ```
