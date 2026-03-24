@@ -3,8 +3,8 @@ import { useParams } from 'react-router-dom';
 import { useWebSocket } from '../hooks/useWebSocket.js';
 import { api } from '../api/client.js';
 
-// Parse: "[HH:MM:SS] [Thread/LEVEL]: message"
-const LOG_REGEX = /^\[(\d{2}:\d{2}:\d{2})\] \[([^\]]+)\/(\w+)\]: (.+)$/;
+// Parse: "[HH:MM:SS] [Thread/LEVEL] [category/]: message"  (avec ou sans bracket de catégorie)
+const LOG_REGEX = /^\[(\d{2}:\d{2}:\d{2})\] \[([^\]]+)\/(\w+)\](?:\s*\[[^\]]*\])?: (.+)$/;
 
 function parseLine(text) {
   const m = text.match(LOG_REGEX);
