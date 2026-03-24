@@ -20,12 +20,14 @@ jobs:
           HTTP=$(curl -s -o /tmp/players.json -w "%{http_code}" \
             --max-time 10 http://localhost:3001/api/players || echo "000")
 
-          if [ "$HTTP" != "200" ]; then
-            echo "❌ Agent injoignable (HTTP $HTTP)"
+          # 000 = agent injoignable (pas démarré)
+          if [ "$HTTP" == "000" ]; then
+            echo "❌ Agent injoignable — est-il démarré ?"
             exit 1
           fi
 
-          ONLINE=$(jq -r '.online // 0' /tmp/players.json)
+          # 500 = RCON indisponible = serveur éteint = 0 joueurs, OK pour déployer
+          ONLINE=$(jq -r '.online // 0' /tmp/players.json 2>/dev/null || echo "0")
 
           if [ "$ONLINE" -gt "0" ]; then
             echo "❌ $ONLINE joueur(s) en ligne — déploiement annulé"
@@ -54,6 +56,7 @@ jobs:
       - name: Pull, build & restart
         run: |
           cd ~/minecraft-dashboard/frontend
+          git reset --hard HEAD
           git pull origin main
           npm ci
           npm run build
