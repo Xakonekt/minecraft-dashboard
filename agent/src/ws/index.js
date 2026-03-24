@@ -2,12 +2,11 @@ import { WebSocketServer } from 'ws';
 import { getServer } from '../services/serverRegistry.js';
 
 export function setupWebSocket(server) {
-  // Pas de path strict — on filtre manuellement pour gérer /ws/logs/:id
-  const wss = new WebSocketServer({ server, noServer: true });
+  const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req, socket, head) => {
-    const match = req.url.match(/^\/ws\/logs\/([^/?]+)/);
-    if (!match) {
+    // On n'accepte que les connexions vers /ws/logs/:id
+    if (!req.url.match(/^\/ws\/logs\/[^/?]+/)) {
       socket.destroy();
       return;
     }
@@ -31,11 +30,9 @@ export function setupWebSocket(server) {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
     };
 
-    // Envoyer l'historique dès la connexion
     const history = logBuffer.getLogs();
     if (history.length > 0) send({ type: 'history', data: history });
 
-    // S'abonner aux nouveaux logs
     const unsubscribe = logBuffer.subscribe((entry) => {
       send({ type: 'log', data: entry.text, timestamp: entry.timestamp });
     });
