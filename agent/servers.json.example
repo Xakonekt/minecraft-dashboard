@@ -6,7 +6,12 @@
     "rconHost": "localhost",
     "rconPort": 25575,
     "rconPassword": "YourRconPassword",
-    "serverType": "neoforge"
+    "serverType": "neoforge",
+    "autoRestart": {
+      "enabled": true,
+      "time": "04:00",
+      "skipIfPlayersOnline": true
+    }
   },
   {
     "id": "creative",

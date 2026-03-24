@@ -4,6 +4,7 @@ import { createLogBuffer } from './logBuffer.js';
 import { createDockerService } from './docker.js';
 import { createRconService } from './rcon.js';
 import { createMonitor } from './monitor.js';
+import { startScheduler } from './scheduler.js';
 import { getAdapter } from '../adapters/index.js';
 
 const registry = new Map();
@@ -40,8 +41,9 @@ export function loadServers() {
 }
 
 export function startAllMonitors() {
-  for (const { monitor } of registry.values()) {
+  for (const { config, monitor, docker, rcon, adapter } of registry.values()) {
     monitor.start();
+    startScheduler(config, monitor, docker, rcon, adapter);
   }
 }
 
