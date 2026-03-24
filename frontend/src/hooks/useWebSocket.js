@@ -10,7 +10,10 @@ export function useWebSocket(maxLines = 500) {
   const connect = useCallback(() => {
     const ws = createWebSocket(
       (msg) => {
-        if (msg.type === 'log') {
+        if (msg.type === 'history') {
+          // Historique complet reçu à la connexion
+          setLogs(msg.data.slice(-maxLines));
+        } else if (msg.type === 'log') {
           setLogs((prev) => {
             const next = [...prev, { text: msg.data, timestamp: msg.timestamp }];
             return next.length > maxLines ? next.slice(-maxLines) : next;

@@ -1,5 +1,6 @@
 import { getContainerStatus, streamContainerLogs } from './docker.js';
 import { sendWebhook } from './discord.js';
+import { addLog, clearLogs } from './logBuffer.js';
 import { config } from '../config.js';
 
 // true = running, false = stopped, null = unknown (first check)
@@ -43,6 +44,7 @@ async function pollStatus() {
       if (running) {
         await sendWebhook('online', { name });
       } else {
+        clearLogs(); // vider le buffer quand le serveur s'arrête
         await sendWebhook(intentionalStop ? 'offline' : 'crash', { name });
       }
       intentionalStop = false;
@@ -65,6 +67,8 @@ async function startLogStream() {
 }
 
 function handleLog(line) {
+  addLog(line); // toujours ajouter au buffer
+
   if (!config.discord.notifyPlayers) return;
 
   const join = line.match(PATTERNS.join);

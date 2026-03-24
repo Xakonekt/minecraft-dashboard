@@ -1,14 +1,12 @@
 import { WebSocketServer } from 'ws';
-import { streamContainerLogs } from '../services/docker.js';
+import { getLogs, subscribe } from '../services/logBuffer.js';
 
 export function setupWebSocket(server) {
   const wss = new WebSocketServer({ server, path: '/ws/logs' });
 
-  wss.on('connection', async (ws, req) => {
+  wss.on('connection', (ws, req) => {
     const clientIp = req.socket.remoteAddress;
     console.log(`[WS] Client connected: ${clientIp}`);
-
-    let logStream = null;
 
     const send = (payload) => {
       if (ws.readyState === ws.OPEN) {
@@ -16,25 +14,24 @@ export function setupWebSocket(server) {
       }
     };
 
-    try {
-      logStream = await streamContainerLogs((line) => {
-        send({ type: 'log', data: line, timestamp: new Date().toISOString() });
-      });
-
-      logStream.on('error', (err) => {
-        send({ type: 'error', data: `Log stream error: ${err.message}` });
-      });
-    } catch (err) {
-      send({ type: 'error', data: `Could not connect to container: ${err.message}` });
+    // Envoyer l'historique dès la connexion
+    const history = getLogs();
+    if (history.length > 0) {
+      send({ type: 'history', data: history });
     }
+
+    // S'abonner aux nouveaux logs
+    const unsubscribe = subscribe((entry) => {
+      send({ type: 'log', data: entry.text, timestamp: entry.timestamp });
+    });
 
     ws.on('close', () => {
       console.log(`[WS] Client disconnected: ${clientIp}`);
-      logStream?.destroy();
+      unsubscribe();
     });
 
     ws.on('error', () => {
-      logStream?.destroy();
+      unsubscribe();
     });
   });
 
